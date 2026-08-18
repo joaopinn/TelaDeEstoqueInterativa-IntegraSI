@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Plus,
   Search,
@@ -12,11 +12,18 @@ import {
   ChevronDown,
   Check,
 } from "lucide-react";
+import {
+  fetchProducts,
+  createProductApi,
+  updateProductApi,
+  deleteProductApi,
+  Product as ApiProduct,
+} from "./services/api";
 
 type Category = "Eletrônicos" | "Vestuário" | "Alimentos" | "Ferramentas" | "Cosméticos";
 
 interface Product {
-  id: number;
+  id: string | number;
   name: string;
   sku: string;
   category: Category;
@@ -98,7 +105,20 @@ export default function App() {
   const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({});
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
 
-  const nextId = useMemo(() => Math.max(...products.map((p) => p.id), 0) + 1, [products]);
+  useEffect(() => {
+    loadProductsFromApi();
+  }, []);
+
+  async function loadProductsFromApi() {
+    try {
+      const data = await fetchProducts();
+      if (Array.isArray(data)) {
+        setProducts(data);
+      }
+    } catch (_err) {
+      console.warn("API offline ou inacessível no momento, usando dados mock iniciais.");
+    }
+  }
 
   const lowStockCount = products.filter((p) => p.quantity <= p.minStock).length;
   const totalValue = products.reduce((s, p) => s + p.price * p.quantity, 0);
@@ -163,7 +183,7 @@ export default function App() {
     return Object.keys(e).length === 0;
   }
 
-  function handleSave() {
+  async function handleSave() {
     if (!validate()) return;
     const data: Omit<Product, "id"> = {
       name: form.name.trim(),
@@ -173,20 +193,42 @@ export default function App() {
       price: Number(form.price),
       minStock: Number(form.minStock),
     };
-    if (modal.type === "add") {
-      setProducts((prev) => [...prev, { id: nextId, ...data }]);
-      showToast("Produto adicionado com sucesso");
-    } else if (modal.type === "edit") {
-      setProducts((prev) => prev.map((p) => (p.id === modal.product.id ? { id: p.id, ...data } : p)));
-      showToast("Produto atualizado com sucesso");
+
+    try {
+      if (modal.type === "add") {
+        const created = await createProductApi(data);
+        setProducts((prev) => [...prev, created]);
+        showToast("Produto adicionado com sucesso");
+      } else if (modal.type === "edit") {
+        const updated = await updateProductApi(modal.product.id, data);
+        setProducts((prev) => prev.map((p) => (p.id === modal.product.id ? updated : p)));
+        showToast("Produto atualizado com sucesso");
+      }
+      closeModal();
+    } catch (err: any) {
+      if (err.message) showToast(err.message, "error");
+      // Fallback para simulação local se a API não estiver rodando
+      if (modal.type === "add") {
+        const localCreated: Product = { id: String(Date.now()), ...data };
+        setProducts((prev) => [...prev, localCreated]);
+      } else if (modal.type === "edit") {
+        setProducts((prev) => prev.map((p) => (p.id === modal.product.id ? { id: p.id, ...data } : p)));
+      }
+      closeModal();
     }
-    closeModal();
   }
 
-  function handleDelete() {
+  async function handleDelete() {
     if (modal.type !== "delete") return;
-    setProducts((prev) => prev.filter((p) => p.id !== modal.product.id));
-    showToast("Produto removido", "error");
+    try {
+      await deleteProductApi(modal.product.id);
+      setProducts((prev) => prev.filter((p) => p.id !== modal.product.id));
+      showToast("Produto removido com sucesso", "error");
+    } catch (err: any) {
+      // Fallback local se a API não estiver rodando
+      setProducts((prev) => prev.filter((p) => p.id !== modal.product.id));
+      showToast("Produto removido (local)", "error");
+    }
     closeModal();
   }
 
