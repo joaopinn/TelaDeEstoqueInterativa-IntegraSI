@@ -11,12 +11,17 @@ import {
   ChevronUp,
   ChevronDown,
   Check,
+  RefreshCw,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 import {
   fetchProducts,
   createProductApi,
   updateProductApi,
   deleteProductApi,
+  checkHealthApi,
+  ApiError,
   Product as ApiProduct,
 } from "./services/api";
 
@@ -24,6 +29,7 @@ type Category = "Eletrônicos" | "Vestuário" | "Alimentos" | "Ferramentas" | "C
 
 interface Product {
   id: string | number;
+  _id?: string;
   name: string;
   sku: string;
   category: Category;
@@ -35,22 +41,22 @@ interface Product {
 const CATEGORIES: Category[] = ["Eletrônicos", "Vestuário", "Alimentos", "Ferramentas", "Cosméticos"];
 
 const INITIAL_PRODUCTS: Product[] = [
-  { id: 1, name: "Fone de Ouvido Bluetooth", sku: "ELE-001", category: "Eletrônicos", quantity: 34, price: 189.9, minStock: 10 },
-  { id: 2, name: "Camiseta Algodão Premium", sku: "VES-002", category: "Vestuário", quantity: 5, price: 59.9, minStock: 15 },
-  { id: 3, name: "Azeite Extra Virgem 500ml", sku: "ALI-003", category: "Alimentos", quantity: 120, price: 24.5, minStock: 30 },
-  { id: 4, name: "Chave de Fenda 6 peças", sku: "FER-004", category: "Ferramentas", quantity: 18, price: 45.0, minStock: 8 },
-  { id: 5, name: "Hidratante Facial FPS30", sku: "COS-005", category: "Cosméticos", quantity: 3, price: 79.9, minStock: 20 },
-  { id: 6, name: "Cabo USB-C 2m", sku: "ELE-006", category: "Eletrônicos", quantity: 67, price: 29.9, minStock: 20 },
-  { id: 7, name: "Calça Jeans Slim", sku: "VES-007", category: "Vestuário", quantity: 22, price: 129.9, minStock: 10 },
-  { id: 8, name: "Café Torrado 500g", sku: "ALI-008", category: "Alimentos", quantity: 88, price: 18.9, minStock: 25 },
+  { id: "1", name: "Fone de Ouvido Bluetooth", sku: "ELE-001", category: "Eletrônicos", quantity: 34, price: 189.9, minStock: 10 },
+  { id: "2", name: "Camiseta Algodão Premium", sku: "VES-002", category: "Vestuário", quantity: 5, price: 59.9, minStock: 15 },
+  { id: "3", name: "Azeite Extra Virgem 500ml", sku: "ALI-003", category: "Alimentos", quantity: 120, price: 24.5, minStock: 30 },
+  { id: "4", name: "Chave de Fenda 6 peças", sku: "FER-004", category: "Ferramentas", quantity: 18, price: 45.0, minStock: 8 },
+  { id: "5", name: "Hidratante Facial FPS30", sku: "COS-005", category: "Cosméticos", quantity: 3, price: 79.9, minStock: 20 },
+  { id: "6", name: "Cabo USB-C 2m", sku: "ELE-006", category: "Eletrônicos", quantity: 67, price: 29.9, minStock: 20 },
+  { id: "7", name: "Calça Jeans Slim", sku: "VES-007", category: "Vestuário", quantity: 22, price: 129.9, minStock: 10 },
+  { id: "8", name: "Café Torrado 500g", sku: "ALI-008", category: "Alimentos", quantity: 88, price: 18.9, minStock: 25 },
 ];
 
 const CATEGORY_COLORS: Record<Category, string> = {
-  Eletrônicos: "bg-blue-100 text-blue-700",
-  Vestuário: "bg-purple-100 text-purple-700",
-  Alimentos: "bg-green-100 text-green-700",
-  Ferramentas: "bg-orange-100 text-orange-700",
-  Cosméticos: "bg-pink-100 text-pink-700",
+  Eletrônicos: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+  Vestuário: "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300",
+  Alimentos: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
+  Ferramentas: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300",
+  Cosméticos: "bg-pink-100 text-pink-700 dark:bg-pink-900/40 dark:text-pink-300",
 };
 
 function fmt(n: number) {
@@ -104,19 +110,39 @@ export default function App() {
   const [sort, setSort] = useState<{ field: SortField; dir: SortDir }>({ field: "name", dir: "asc" });
   const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({});
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
+  const [apiStatus, setApiStatus] = useState<"checking" | "online" | "offline">("checking");
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   useEffect(() => {
     loadProductsFromApi();
   }, []);
 
   async function loadProductsFromApi() {
+    setIsRefreshing(true);
     try {
       const data = await fetchProducts();
-      if (Array.isArray(data)) {
-        setProducts(data);
+      setProducts(data);
+      setApiStatus("online");
+      showToast("Conectado à API com sucesso!", "success");
+    } catch (err: any) {
+      setApiStatus("offline");
+      if (err instanceof ApiError && !err.isNetworkError) {
+        showToast(`Erro na API: ${err.message}`, "error");
       }
-    } catch (_err) {
-      console.warn("API offline ou inacessível no momento, usando dados mock iniciais.");
+    } finally {
+      setIsRefreshing(false);
+    }
+  }
+
+  async function handleCheckConnection() {
+    setIsRefreshing(true);
+    const isHealthy = await checkHealthApi();
+    if (isHealthy) {
+      await loadProductsFromApi();
+    } else {
+      setApiStatus("offline");
+      setIsRefreshing(false);
+      showToast("API inacessível em http://localhost:3000", "error");
     }
   }
 
@@ -146,7 +172,7 @@ export default function App() {
 
   function showToast(msg: string, type: "success" | "error" = "success") {
     setToast({ msg, type });
-    setTimeout(() => setToast(null), 3000);
+    setTimeout(() => setToast(null), 3500);
   }
 
   function openAdd() {
@@ -185,7 +211,7 @@ export default function App() {
 
   async function handleSave() {
     if (!validate()) return;
-    const data: Omit<Product, "id"> = {
+    const data: Omit<Product, "id" | "_id"> = {
       name: form.name.trim(),
       sku: form.sku.trim().toUpperCase(),
       category: form.category,
@@ -198,21 +224,32 @@ export default function App() {
       if (modal.type === "add") {
         const created = await createProductApi(data);
         setProducts((prev) => [...prev, created]);
-        showToast("Produto adicionado com sucesso");
+        showToast("Produto cadastrado com sucesso via API!");
+        closeModal();
       } else if (modal.type === "edit") {
-        const updated = await updateProductApi(modal.product.id, data);
-        setProducts((prev) => prev.map((p) => (p.id === modal.product.id ? updated : p)));
-        showToast("Produto atualizado com sucesso");
+        const targetId = modal.product.id || modal.product._id!;
+        const updated = await updateProductApi(targetId, data);
+        setProducts((prev) => prev.map((p) => (p.id === targetId || p._id === targetId ? updated : p)));
+        showToast("Produto atualizado com sucesso via API!");
+        closeModal();
       }
-      closeModal();
     } catch (err: any) {
-      if (err.message) showToast(err.message, "error");
-      // Fallback para simulação local se a API não estiver rodando
+      if (err instanceof ApiError && !err.isNetworkError) {
+        // Erro da API (ex: 400 SKU duplicado ou validação no servidor)
+        showToast(err.message, "error");
+        return; // Não fecha o modal para o aluno corrigir o dado ou testar novamente
+      }
+
+      // Se a API estiver offline, faz a alteração em modo simulação local
+      showToast("API offline: alteração aplicada localmente", "error");
       if (modal.type === "add") {
         const localCreated: Product = { id: String(Date.now()), ...data };
         setProducts((prev) => [...prev, localCreated]);
       } else if (modal.type === "edit") {
-        setProducts((prev) => prev.map((p) => (p.id === modal.product.id ? { id: p.id, ...data } : p)));
+        const targetId = modal.product.id || modal.product._id!;
+        setProducts((prev) =>
+          prev.map((p) => (p.id === targetId || p._id === targetId ? { ...p, ...data } : p))
+        );
       }
       closeModal();
     }
@@ -220,14 +257,18 @@ export default function App() {
 
   async function handleDelete() {
     if (modal.type !== "delete") return;
+    const targetId = modal.product.id || modal.product._id!;
     try {
-      await deleteProductApi(modal.product.id);
-      setProducts((prev) => prev.filter((p) => p.id !== modal.product.id));
-      showToast("Produto removido com sucesso", "error");
+      await deleteProductApi(targetId);
+      setProducts((prev) => prev.filter((p) => p.id !== targetId && p._id !== targetId));
+      showToast("Produto removido com sucesso via API!", "success");
     } catch (err: any) {
-      // Fallback local se a API não estiver rodando
-      setProducts((prev) => prev.filter((p) => p.id !== modal.product.id));
-      showToast("Produto removido (local)", "error");
+      if (err instanceof ApiError && !err.isNetworkError) {
+        showToast(err.message, "error");
+        return;
+      }
+      setProducts((prev) => prev.filter((p) => p.id !== targetId && p._id !== targetId));
+      showToast("API offline: removido em modo local", "error");
     }
     closeModal();
   }
@@ -247,34 +288,79 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-background font-[Inter,sans-serif]">
-      {/* Toast */}
+      {/* Toast Notification */}
       {toast && (
         <div
-          className={`fixed top-5 right-5 z-50 flex items-center gap-2 px-4 py-3 rounded-md text-sm font-medium shadow-lg transition-all ${
+          className={`fixed top-5 right-5 z-50 flex items-center gap-2 px-4 py-3 rounded-md text-sm font-medium shadow-lg transition-all border ${
             toast.type === "success"
-              ? "bg-foreground text-background"
-              : "bg-destructive text-destructive-foreground"
+              ? "bg-emerald-950 text-emerald-100 border-emerald-800"
+              : "bg-rose-950 text-rose-100 border-rose-800"
           }`}
         >
-          {toast.type === "success" ? <Check size={15} /> : <X size={15} />}
+          {toast.type === "success" ? <Check size={16} /> : <X size={16} />}
           {toast.msg}
         </div>
       )}
 
       {/* Header */}
       <header className="border-b border-border bg-card">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <Package className="text-primary" size={22} />
-            <span className="font-semibold text-base tracking-tight">Gestão de Estoque</span>
+            <div className="p-2 bg-primary/10 rounded-lg text-primary">
+              <Package size={24} />
+            </div>
+            <div>
+              <h1 className="font-semibold text-lg tracking-tight">Gestão de Estoque</h1>
+              <p className="text-xs text-muted-foreground">Oficina API - IntegraSI</p>
+            </div>
           </div>
-          <button
-            onClick={openAdd}
-            className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm font-medium hover:opacity-90 transition-opacity"
-          >
-            <Plus size={15} />
-            Novo Produto
-          </button>
+
+          <div className="flex items-center gap-3">
+            {/* Status Badge da API */}
+            <div
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                apiStatus === "online"
+                  ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/30"
+                  : apiStatus === "checking"
+                  ? "bg-amber-500/10 text-amber-600 border-amber-500/30"
+                  : "bg-rose-500/10 text-rose-600 border-rose-500/30"
+              }`}
+            >
+              {apiStatus === "online" ? (
+                <>
+                  <Wifi size={13} className="text-emerald-500" />
+                  <span>API Online (http://localhost:3000)</span>
+                </>
+              ) : apiStatus === "checking" ? (
+                <>
+                  <RefreshCw size={13} className="animate-spin text-amber-500" />
+                  <span>Testando conexão...</span>
+                </>
+              ) : (
+                <>
+                  <WifiOff size={13} className="text-rose-500" />
+                  <span>API Offline (Modo Local)</span>
+                </>
+              )}
+            </div>
+
+            <button
+              onClick={handleCheckConnection}
+              disabled={isRefreshing}
+              className="p-2 border border-border rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+              title="Testar Conexão com API"
+            >
+              <RefreshCw size={15} className={isRefreshing ? "animate-spin" : ""} />
+            </button>
+
+            <button
+              onClick={openAdd}
+              className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm font-medium hover:opacity-90 transition-opacity"
+            >
+              <Plus size={15} />
+              Novo Produto
+            </button>
+          </div>
         </div>
       </header>
 
@@ -284,12 +370,12 @@ export default function App() {
           {[
             { label: "Produtos cadastrados", value: String(products.length), icon: Package, color: "text-foreground" },
             { label: "Itens em estoque", value: totalItems.toLocaleString("pt-BR"), icon: TrendingUp, color: "text-foreground" },
-            { label: "Valor total", value: fmt(totalValue), icon: TrendingUp, color: "text-primary" },
-            { label: "Estoque baixo", value: String(lowStockCount), icon: AlertTriangle, color: lowStockCount > 0 ? "text-destructive" : "text-muted-foreground" },
+            { label: "Valor total", value: fmt(totalValue), icon: TrendingUp, color: "text-primary font-semibold" },
+            { label: "Estoque baixo", value: String(lowStockCount), icon: AlertTriangle, color: lowStockCount > 0 ? "text-destructive font-semibold" : "text-muted-foreground" },
           ].map((s) => (
             <div key={s.label} className="bg-card border border-border rounded-md p-4">
               <p className="text-xs text-muted-foreground font-mono uppercase tracking-wide mb-1">{s.label}</p>
-              <p className={`text-xl font-semibold ${s.color}`}>{s.value}</p>
+              <p className={`text-xl ${s.color}`}>{s.value}</p>
             </div>
           ))}
         </div>
@@ -328,7 +414,7 @@ export default function App() {
         </div>
 
         {/* Table */}
-        <div className="bg-card border border-border rounded-md overflow-hidden">
+        <div className="bg-card border border-border rounded-md overflow-hidden shadow-sm">
           {filtered.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-2">
               <Package size={32} className="opacity-30" />
@@ -367,17 +453,18 @@ export default function App() {
                 <tbody className="divide-y divide-border">
                   {filtered.map((p) => {
                     const isLow = p.quantity <= p.minStock;
+                    const pKey = p.id || p._id || p.sku;
                     return (
-                      <tr key={p.id} className="hover:bg-muted/30 transition-colors group">
+                      <tr key={pKey} className="hover:bg-muted/30 transition-colors group">
                         <td className="px-4 py-3 font-medium">{p.name}</td>
                         <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{p.sku}</td>
                         <td className="px-4 py-3">
-                          <span className={`text-xs font-medium px-2 py-1 rounded-full ${CATEGORY_COLORS[p.category]}`}>
+                          <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${CATEGORY_COLORS[p.category]}`}>
                             {p.category}
                           </span>
                         </td>
                         <td className="px-4 py-3">
-                          <span className={`font-mono font-medium ${isLow ? "text-destructive" : ""}`}>
+                          <span className={`font-mono font-medium ${isLow ? "text-destructive font-bold" : ""}`}>
                             {p.quantity}
                           </span>
                         </td>
@@ -385,16 +472,16 @@ export default function App() {
                         <td className="px-4 py-3 font-mono font-medium">{fmt(p.price * p.quantity)}</td>
                         <td className="px-4 py-3">
                           {isLow ? (
-                            <span className="flex items-center gap-1 text-xs text-destructive font-medium">
+                            <span className="inline-flex items-center gap-1 text-xs text-destructive font-semibold bg-destructive/10 px-2 py-0.5 rounded">
                               <AlertTriangle size={12} />
                               Baixo
                             </span>
                           ) : (
-                            <span className="text-xs text-green-600 font-medium">OK</span>
+                            <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">OK</span>
                           )}
                         </td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                             <button
                               onClick={() => openEdit(p)}
                               className="p-1.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
@@ -420,9 +507,12 @@ export default function App() {
           )}
         </div>
 
-        <p className="text-xs text-muted-foreground font-mono">
-          {filtered.length} produto{filtered.length !== 1 ? "s" : ""} exibido{filtered.length !== 1 ? "s" : ""}
-        </p>
+        <div className="flex justify-between items-center text-xs text-muted-foreground font-mono">
+          <p>
+            {filtered.length} produto{filtered.length !== 1 ? "s" : ""} exibido{filtered.length !== 1 ? "s" : ""}
+          </p>
+          <p>API Endpoint: <code className="bg-muted px-1.5 py-0.5 rounded">http://localhost:3000/products</code></p>
+        </div>
       </main>
 
       {/* Modal overlay */}
