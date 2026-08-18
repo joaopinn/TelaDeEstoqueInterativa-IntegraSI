@@ -119,31 +119,29 @@ export default function App() {
 
   async function loadProductsFromApi() {
     setIsRefreshing(true);
-    try {
-      const data = await fetchProducts();
-      setProducts(data);
+    // Testa primeiro se a API/Express está no ar via /health
+    const isHealthy = await checkHealthApi();
+    if (isHealthy) {
       setApiStatus("online");
-      showToast("Conectado à API com sucesso!", "success");
-    } catch (err: any) {
-      setApiStatus("offline");
-      if (err instanceof ApiError && !err.isNetworkError) {
-        showToast(`Erro na API: ${err.message}`, "error");
+      try {
+        const data = await fetchProducts();
+        if (Array.isArray(data) && data.length > 0) {
+          setProducts(data);
+          showToast("Conectado! Produtos carregados do MongoDB", "success");
+        } else {
+          showToast("API Online! (Rota /products pronta)", "success");
+        }
+      } catch (_err) {
+        showToast("API Conectada! (Aguardando implementação de /products)", "success");
       }
-    } finally {
-      setIsRefreshing(false);
+    } else {
+      setApiStatus("offline");
     }
+    setIsRefreshing(false);
   }
 
   async function handleCheckConnection() {
-    setIsRefreshing(true);
-    const isHealthy = await checkHealthApi();
-    if (isHealthy) {
-      await loadProductsFromApi();
-    } else {
-      setApiStatus("offline");
-      setIsRefreshing(false);
-      showToast("API inacessível em http://localhost:3000", "error");
-    }
+    await loadProductsFromApi();
   }
 
   const lowStockCount = products.filter((p) => p.quantity <= p.minStock).length;
@@ -235,12 +233,12 @@ export default function App() {
       }
     } catch (err: any) {
       if (err instanceof ApiError && !err.isNetworkError) {
-        // Erro da API (ex: 400 SKU duplicado ou validação no servidor)
+        // Erro retornado pela API (ex: 400 SKU duplicado ou validação no servidor)
         showToast(err.message, "error");
-        return; // Não fecha o modal para o aluno corrigir o dado ou testar novamente
+        return; // Não fecha o modal para o aluno corrigir o dado
       }
 
-      // Se a API estiver offline, faz a alteração em modo simulação local
+      // Se o servidor estiver offline, faz a alteração em modo simulação local
       showToast("API offline: alteração aplicada localmente", "error");
       if (modal.type === "add") {
         const localCreated: Product = { id: String(Date.now()), ...data };
